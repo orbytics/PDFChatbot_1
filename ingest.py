@@ -16,8 +16,11 @@ _HEADER_RE = re.compile(
 
 
 def _normalize_spaces(text: str) -> str:
-    """Phase 1 (load time): collapse double-space PDF artifact, keep newlines."""
-    return re.sub(r"[ \t]{2,}", " ", text).strip()
+    """Phase 1 (load time): collapse double-space artifact and strip page watermark."""
+    text = re.sub(r"[ \t]{2,}", " ", text)
+    # Remove page-footer watermark that bleeds into every chunk
+    text = re.sub(r"\s*Anthropic,\s*PBC\s*[·•]\s*Confidential\s*Need\s*to\s*Know\s*\(NTK\)", "", text)
+    return text.strip()
 
 
 def _normalize_chunk(text: str) -> str:

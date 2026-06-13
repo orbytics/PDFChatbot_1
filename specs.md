@@ -74,6 +74,24 @@ Based on a review of a representative sample document (a 10-page certification e
 - **Header-aware splitting first** ensures a chunk doesn't straddle two unrelated Task Statements, which would mix context from different topics and hurt retrieval precision.
 - **`text-embedding-3-small`** is used as a cost-effective default suitable for a personal prototype. The source material does contain closely related, easily-confused technical terms (e.g., similarly named tools, "hooks vs. prompt-based enforcement"), so if retrieval quality on these near-duplicate concepts proves insufficient, `text-embedding-3-large` is a drop-in upgrade (re-run `ingest.py` after changing `EMBEDDING_MODEL`, since the FAISS index must be rebuilt with matching embedding dimensions).
 
+### PDF Text Normalization (implemented)
+PyPDFLoader extracts text with several artifacts that must be cleaned before chunking and before the quote verification guard can work reliably. The actual implementation uses two normalization phases:
+
+**Phase 1 — at load time (`_normalize_spaces`)**, applied to each page before splitting:
+- Collapses double-space artifacts (`"word  word"` → `"word word"`) from PDF column rendering.
+- Strips page-footer watermarks (e.g., `"Anthropic, PBC · Confidential Need to Know (NTK)"`) that bleed into every page and would otherwise contaminate chunk content and LLM responses.
+
+**Phase 2 — per-chunk (`_normalize_chunk`)**, applied to each section piece after header splitting:
+- Collapses `"word\n \nword"` (space-only lines between words, a PDF column-layout artifact) → `"word word"`.
+- Flattens line-wrap newlines that are not before bullet markers (`-`) or paragraph breaks (`\n\n`) → single space. This is critical: without it, the LLM returns quotes with spaces where the chunk has newlines, causing the substring verification guard to always fail.
+- Strips trailing orphaned bullet markers (`\n-`) at chunk boundaries.
+
+**Why two phases matter**: the header regex (`Task Statement X.Y:`, `Domain N:`) relies on newlines being present to know where a title ends. If newlines were collapsed at load time (phase 1), the regex would match too far into the body text. Splitting first (using newlines), then normalizing per-chunk (phase 2), preserves the correct split boundaries.
+
+**Minimum chunk length**: chunks shorter than 20 characters (orphaned bullet markers, bare domain headers with no body) are filtered out after the recursive character split. These arise from page-boundary artifacts where a bullet `- ` prefix lands on one page and its content on the next.
+
+**Section continuity across pages**: the `current_section` variable is carried forward across page boundaries during splitting. If a Task Statement starts on page 4 and its bullet list continues on page 5, both chunks carry the same `metadata["section"]` value.
+
 ### Vector Store: FAISS vs. Chroma
 FAISS was chosen per your preference. For this single-user, file-based prototype it's a good fit:
 - LangChain's `FAISS` vector store wrapper bundles an in-memory docstore that holds chunk text and metadata alongside the index, so source/page attribution works the same as it would with Chroma.
@@ -85,8 +103,10 @@ FAISS was chosen per your preference. For this single-user, file-based prototype
   1. Embed the user's question using the same embedding model.
   2. Perform a similarity search against the FAISS index to retrieve the top-k chunks (default k=4, configurable).
   3. Construct a prompt containing: a strict grounding system instruction (below), the retrieved chunks as context (each tagged with its source filename and page number), and the user's question.
-  4. Send the prompt to the OpenAI chat completion model (`gpt-4o-mini`).
+  4. Send the prompt to the OpenAI chat completion model (`gpt-4o-mini`) using **JSON mode** (`response_format: json_object`) to ensure structured output that can be reliably parsed by the pydantic `RAGAnswer` model.
   5. Return the generated answer along with the list of source documents/chunks used.
+
+> **Page numbering**: PyPDFLoader's `metadata["page"]` is 0-indexed. The implementation uses `metadata["page_label"]` (the PDF's own page label, e.g. `"1"`, `"2"`) for all user-facing page numbers in context tags, answers, and citations. This avoids an off-by-one error in displayed page numbers.
 
 ### Strict Grounding Rules (System Instruction)
 The retrieved document context is the model's ONLY source of truth. The system prompt sent to the LLM must enforce:

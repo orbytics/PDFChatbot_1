@@ -26,6 +26,8 @@ This document breaks down the build into ordered milestones. Each milestone prod
 
 **Done when**: `uv run python -c "import langchain, faiss, streamlit, openai"` runs without errors.
 
+> **Dependency fix (actual)**: `requirements.txt` pinned `langchain-text-splitters==0.3.5`, but `langchain==0.3.18` requires `>=0.3.6`. Bumped to `0.3.11` (the version resolved by `uv` for this combination). Keep this in mind if upgrading LangChain in future.
+
 **Push**: commit (`git add . && git commit -m "Milestone 0: project setup"`), then push the branch to GitHub.
 
 **⏸ Wait for approval before starting Milestone 1.**
@@ -78,6 +80,13 @@ This document breaks down the build into ordered milestones. Each milestone prod
 2. Sanity-check on the sample PDF: print chunk count, average chunk length, and a couple of sample chunks to confirm sections aren't being split mid-bullet.
 
 **Branch**: `git checkout -b milestone-3-chunking`
+
+**Actual implementation notes**:
+- The header regex (`Task\s+Statement\s+[\d.]+\s*:[^\n]*`) must run **before** newline normalization, because newlines are the only reliable boundary between a section title and its body. A two-phase normalization approach was used: `_normalize_spaces` (double-space collapse + watermark strip) at load time, `_normalize_chunk` (newline flattening) per chunk after splitting.
+- `_normalize_chunk` flattens line-wrap newlines (except before bullet `-` markers and paragraph breaks) so that LLM-generated quotes, which naturally have no newlines, can substring-match the stored chunk text in the verification guard.
+- `current_section` is tracked across pages so that continuation chunks (body of a Task Statement that overflows to the next page) inherit the correct section label.
+- A `MIN_CHUNK_LEN = 20` filter removes orphaned bullet markers (e.g., a lone `"-"`) and bare domain headers with no body, both of which arise from page-boundary PDF layout artifacts.
+- Result on the sample PDF: **41 chunks**, avg 463 chars, min 39, max 800, all 10 pages covered.
 
 **Done when**: Chunk count is reasonable (not 1 giant chunk, not hundreds of tiny ones) and spot-checked chunks look semantically coherent.
 
@@ -169,6 +178,11 @@ This document breaks down the build into ordered milestones. Each milestone prod
 3. Note any retrieval quality issues (e.g., wrong chunks retrieved) — if frequent, revisit `CHUNK_SIZE`/`TOP_K`/`EMBEDDING_MODEL` per the rationale in specs.md §6.
 
 **Branch**: `git checkout -b milestone-7-e2e-test`
+
+**Actual findings**:
+- **Watermark bug found and fixed**: The page-footer `"Anthropic, PBC · Confidential Need to Know (NTK)"` appeared in 9 of 41 chunks. In one case the LLM returned it as the answer. Fixed by adding a regex strip to `_normalize_spaces` in `ingest.py` at load time. Zero watermarked chunks after rebuild.
+- **Multi-page aggregation limit**: A question asking for all 5 domain weights returned `NO INFORMATION AVAILABLE` — each domain is a separate chunk and `TOP_K=4` can only retrieve 4. This is **correct strict-grounding behavior** (rule 4: "if only part of the answer is available → NO INFORMATION AVAILABLE"), not a bug. Questions requiring aggregation across more than `TOP_K` chunks will always hit this limit.
+- **Test results**: (1) clearly answerable → answer + verified quote ✓, (2) out-of-scope → `no_information: True` ✓, (3) multi-page (pages 4–6) → answer + verified quote ✓, (4) multi-turn simulation → correct independent responses ✓.
 
 **Done when**: You're satisfied with answer quality, citation accuracy, and `NO INFORMATION AVAILABLE` behavior on the sample PDF.
 

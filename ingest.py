@@ -1,6 +1,8 @@
 import re
 import os
 from langchain_community.document_loaders import PyPDFLoader
+from langchain_community.vectorstores import FAISS
+from langchain_openai import OpenAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain.schema import Document
 import config
@@ -99,6 +101,19 @@ def split_documents(docs: list[Document]) -> list[Document]:
     return final_chunks
 
 
+def build_index(chunks: list[Document]) -> FAISS:
+    print(f"Embedding {len(chunks)} chunks with {config.EMBEDDING_MODEL} ...")
+    embeddings = OpenAIEmbeddings(
+        model=config.EMBEDDING_MODEL,
+        openai_api_key=config.OPENAI_API_KEY,
+    )
+    vectorstore = FAISS.from_documents(chunks, embeddings)
+    os.makedirs(config.FAISS_INDEX_DIR, exist_ok=True)
+    vectorstore.save_local(config.FAISS_INDEX_DIR)
+    print(f"Index saved to {config.FAISS_INDEX_DIR}/ ({len(chunks)} vectors)")
+    return vectorstore
+
+
 if __name__ == "__main__":
     docs = load_documents(config.PDF_PATH)
     chunks = split_documents(docs)
@@ -108,15 +123,4 @@ if __name__ == "__main__":
     print(f"Avg length   : {sum(lengths) // len(lengths)} chars")
     print(f"Min / Max    : {min(lengths)} / {max(lengths)} chars")
 
-    print("\n--- Sample chunk 1 ---")
-    print(f"metadata : {chunks[0].metadata}")
-    print(f"content  : {chunks[0].page_content[:400]}")
-
-    print("\n--- Sample chunk (mid-document) ---")
-    mid = len(chunks) // 2
-    print(f"metadata : {chunks[mid].metadata}")
-    print(f"content  : {chunks[mid].page_content[:400]}")
-
-    print("\n--- Sample chunk (last) ---")
-    print(f"metadata : {chunks[-1].metadata}")
-    print(f"content  : {chunks[-1].page_content[:400]}")
+    build_index(chunks)

@@ -1,0 +1,23 @@
+# --- Core orchestration ---
+langchain==0.3.18
+langchain-community==0.3.17
+langchain-openai==0.3.5
+langchain-text-splitters==0.3.11
+
+# --- LLM / Embeddings provider ---
+openai==1.61.1
+
+# --- Structured output validation ---
+pydantic==2.10.6           # validates Answer/Page Number(s)/Quote response structure
+
+# --- Vector store ---
+faiss-cpu==1.9.0.post1
+
+# --- Document loaders ---
+pypdf==5.2.0              # PDF loading (PyPDFLoader)
+
+# --- UI ---
+streamlit==1.41.1
+
+# --- Config / utils ---
+python-dotenv==1.0.1

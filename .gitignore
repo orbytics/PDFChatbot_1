@@ -1,0 +1,30 @@
+# Secrets & config
+.env
+
+# Generated vector store (rebuilt by ingest.py — not committed)
+faiss_index/
+
+# Source documents (private — not committed)
+documents/*
+!documents/.gitkeep
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# uv / virtualenv
+.venv/
+.python-version
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/

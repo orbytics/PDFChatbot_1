@@ -118,6 +118,13 @@ def build_index(chunks: list[Document]) -> FAISS:
 
 
 if __name__ == "__main__":
+    import sys
+
+    if not os.path.isfile(config.PDF_PATH):
+        print(f"Error: PDF not found at '{config.PDF_PATH}'.")
+        print("Place your PDF at that path (or set PDF_PATH in .env) and re-run.")
+        sys.exit(1)
+
     docs = load_documents(config.PDF_PATH)
     chunks = split_documents(docs)
 

@@ -1,9 +1,20 @@
 import os
 import streamlit as st
-import rag_pipeline
-import config
 
 st.set_page_config(page_title="PDF Chatbot", page_icon="📄", layout="centered")
+
+# ---------------------------------------------------------------------------
+# Guard: config import raises EnvironmentError if OPENAI_API_KEY is missing
+# ---------------------------------------------------------------------------
+try:
+    import config
+    import rag_pipeline
+except EnvironmentError as e:
+    st.error(f"Configuration error: {e}")
+    st.info("Create a `.env` file in the project root with `OPENAI_API_KEY=sk-...`")
+    st.stop()
+
+import openai
 
 
 # ---------------------------------------------------------------------------
@@ -91,7 +102,20 @@ if question := st.chat_input("Ask a question about the document…"):
 
     with st.chat_message("assistant"):
         with st.spinner("Searching…"):
-            result = rag_pipeline.get_answer(question)
+            try:
+                result = rag_pipeline.get_answer(question)
+            except openai.AuthenticationError:
+                st.error("Invalid OpenAI API key. Check the `OPENAI_API_KEY` value in your `.env` file.")
+                st.stop()
+            except openai.RateLimitError:
+                st.error("OpenAI rate limit reached. Please wait a moment and try again.")
+                st.stop()
+            except openai.APIError as e:
+                st.error(f"OpenAI API error: {e}")
+                st.stop()
+            except Exception as e:
+                st.error(f"Unexpected error: {e}")
+                st.stop()
         _render_answer(result)
 
     st.session_state.history.append({"question": question, "result": result})
